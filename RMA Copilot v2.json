@@ -1,0 +1,1082 @@
+{
+  "name": "RMA Copilot v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rma-copilot-v2",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "rma-copilot-v2",
+      "id": "35b5d3e7-e6ed-4711-92fb-ab55bce98fc5",
+      "name": "Webhook",
+      "position": [
+        -2144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/oauth/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "fb785fb4-01a4-400d-9e39-1c74a6d7eef2",
+      "name": "Get ORDS Token",
+      "position": [
+        -1936,
+        304
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "tWUNC2mDGK9zs01T",
+          "name": "ORDS_RMA_OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "authorization",
+              "value": "={{ 'Bearer ' + $json.access_token }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "e9bfa3c4-9d9a-447e-9fbe-52f73a9cb920",
+      "name": "Build Auth Header",
+      "position": [
+        -1744,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$('Webhook').first().json.body;\nreturn [{json:{\n correlation_id:b.MessageSid, customer_phone:b.WaId, customer_phone_full:b.From,\n profile_name:b.ProfileName, message_text:b.Body, media_count:parseInt(b.NumMedia||'0')\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "11aa9b06-81e1-4c2f-a16d-d4ff8784ae8c",
+      "name": "Normalize Payload",
+      "position": [
+        -1536,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/inbound-message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"channel\":\"whatsapp\",\n \"customer_phone\":\"{{ $json.customer_phone }}\",\n \"message_sid\":\"{{ $json.correlation_id }}\",\n \"message_text\": {{ JSON.stringify($json.message_text) }},\n \"media_count\":\"{{ $json.media_count }}\",\n \"profile_name\": {{ JSON.stringify($json.profile_name) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "83347219-92e6-41c7-846e-cd3a7e21fac6",
+      "name": "Log Inbound & Get State",
+      "position": [
+        -1344,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an intent classifier for a retail returns bot. Respond with ONLY a strict, valid JSON object: double-quoted keys and string values, no markdown, no code fences, no commentary. Use exactly these keys: \"intent\" (one of RETURN, EXCHANGE, REFUND_STATUS, OTHER), \"order_number\" (string or null), \"problem_type\" (one of DAMAGED_ON_ARRIVAL, WRONG_ITEM, DEFECTIVE, CHANGE_OF_MIND, or null), \"customer_goal\" (one of REFUND, REPLACEMENT, EXCHANGE, STORE_CREDIT, UNKNOWN). If the customer message is just an order number, set \"intent\" to \"RETURN\". Example: {\"intent\":\"RETURN\",\"order_number\":\"ORD-10452\",\"problem_type\":\"DAMAGED_ON_ARRIVAL\",\"customer_goal\":\"REFUND\"}"
+            },
+            {
+              "content": "={{ $('Normalize Payload').first().json.message_text }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "id": "16971092-57a3-434c-b660-95bd5299ff8c",
+      "name": "Understand Message",
+      "position": [
+        -1200,
+        -96
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "0K3dXiA8yyZdAnAF",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- pull the model's text out no matter the shape ---\nlet txtOut = '';\ntry {\n  const o = $json.output ?? $json;\n  txtOut = o?.[0]?.content?.[0]?.text   // langchain / Responses array shape\n        ?? $json.message?.content        // chat shape\n        ?? $json.text                    // simple shape\n        ?? (typeof $json === 'string' ? $json : '');\n} catch (e) { txtOut = ''; }\n\n// strip code fences, then grab the first {...} block\nlet raw = String(txtOut).replace(/```json/gi, '').replace(/```/g, '').trim();\nconst brace = raw.match(/\\{[\\s\\S]*\\}/);\nif (brace) raw = brace[0];\n\n// parse defensively — a bad LLM reply must never hard-fail the workflow\nlet u = {};\ntry { u = JSON.parse(raw); } catch (e) { u = {}; }\n\nconst inState = $('Log Inbound & Get State').first().json;\nconst ctx  = inState.context || {};\nconst step = inState.current_step || '';\nconst txt  = $('Normalize Payload').first().json.message_text || '';\n\n// recover the order number from the raw text even if the model missed it\nlet ord = u.order_number;\nconst m = txt.match(/\\bORD-(\\d+)\\b/i) || txt.match(/\\b(\\d{4,8})\\b/);\nif (!ord && m) ord = 'ORD-' + m[1]; else if (ord) ord = String(ord).toUpperCase();\n\nlet goal = u.customer_goal;\nif (!goal || goal === 'UNKNOWN') goal = (u.intent === 'EXCHANGE') ? 'REPLACEMENT' : 'REFUND';\n\n// a bare order number while we're awaiting one counts as a return continuation\nconst awaiting = step === 'AWAITING_ORDER_NUMBER';\nconst isReturn = ['RETURN', 'EXCHANGE', 'REFUND_STATUS'].includes(u.intent);\n\nlet route = 'NOT_RETURN';\nif ((isReturn || awaiting) && ord) route = 'CREATE';\nelse if ((isReturn || awaiting) && !ord) route = 'ASK_ORDER';\n\nreturn [{ json: {\n  route,\n  order_number: ord || null,\n  customer_goal: goal,\n  problem_type: u.problem_type || ctx.problem_type || null,\n  intent: u.intent || (awaiting ? 'RETURN' : 'OTHER'),\n  conversation_id: inState.conversation_id,\n  customer_id: inState.customer_id,\n  customer_phone_full: $('Normalize Payload').first().json.customer_phone_full,\n  correlation_id: $('Normalize Payload').first().json.correlation_id,\n  message_text: txt\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "70b28a36-31a9-4240-aaf4-5010e0a21b45",
+      "name": "Parse & Route",
+      "position": [
+        -944,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "s_CREATE",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "CREATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "s_ASK_ORDER",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "ASK_ORDER",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "s_NOT_RETURN",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "NOT_RETURN",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "id": "6b0f7fcf-78a9-48d8-9b14-fc93b747c9f2",
+      "name": "Route by Intent",
+      "position": [
+        -720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/orders/{{ $json.order_number }}/return-eligibility",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "96f65370-7910-4c59-b001-3396cbdf1e78",
+      "name": "Check Eligibility",
+      "position": [
+        -480,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "5279b5df-a8ab-45ab-8d34-c1bc0b2ffaaa",
+      "name": "Is Eligible?",
+      "position": [
+        -240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/returns",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"customer_id\":\"{{ $('Parse & Route').first().json.customer_id }}\",\n \"order_id\":\"{{ $('Check Eligibility').first().json.order_id }}\",\n \"conversation_id\":\"{{ $('Parse & Route').first().json.conversation_id }}\",\n \"correlation_id\":\"{{ $('Parse & Route').first().json.correlation_id }}\",\n \"idempotency_key\":\"{{ $('Parse & Route').first().json.correlation_id }}_CREATE_RETURN\",\n \"reason_code\":\"{{ $('Parse & Route').first().json.problem_type }}\",\n \"customer_description\": {{ JSON.stringify($('Parse & Route').first().json.message_text) }},\n \"requested_resolution\":\"{{ $('Parse & Route').first().json.customer_goal }}\",\n \"channel\":\"WHATSAPP\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "eeeff481-b563-4c6a-a54d-94e1be40bcbd",
+      "name": "Create RMA",
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "reply_text",
+              "value": "=={{ $json.requires_approval\n    ? 'Thanks! Your return request ' + $json.rma_number + ' has been created and is pending approval. Our team will review it and follow up shortly.'\n    : 'Your return is approved! Your RMA number is ' + $json.rma_number + '. We\\'ll send return instructions shortly.' }}",
+              "type": "string"
+            },
+            {
+              "id": "f1",
+              "name": "next_state",
+              "value": "COMPLETE",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "next_step",
+              "value": "RETURN_CREATED",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "audit_event",
+              "value": "RETURN_CASE_CREATED",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "outcome_status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "entity_type",
+              "value": "RETURN_CASE",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "entity_id",
+              "value": "={{ $json.return_case_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "674be9eb-a0d8-427f-83fc-68139d959d64",
+      "name": "Decide: Created",
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "reply_text",
+              "value": "=Unfortunately we can't process a return for order {{ $('Check Eligibility').first().json.order_number }} — {{ $('Check Eligibility').first().json.reason }}.",
+              "type": "string"
+            },
+            {
+              "id": "f1",
+              "name": "next_state",
+              "value": "COMPLETE",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "next_step",
+              "value": "RETURN_DENIED",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "audit_event",
+              "value": "RETURN_CASE_DENIED",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "outcome_status",
+              "value": "DENIED",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "entity_type",
+              "value": "CONVERSATION",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "entity_id",
+              "value": "={{ $('Parse & Route').first().json.conversation_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "0bfdab17-d465-4285-a7b8-92a6b55e78d4",
+      "name": "Decide: Denied",
+      "position": [
+        0,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "reply_text",
+              "value": "I couldn't find that order number. Please double-check it — it looks like ORD-10452.",
+              "type": "string"
+            },
+            {
+              "id": "f1",
+              "name": "next_state",
+              "value": "COLLECTING_INFO",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "next_step",
+              "value": "AWAITING_ORDER_NUMBER",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "audit_event",
+              "value": "ORDER_NOT_FOUND",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "outcome_status",
+              "value": "FAILURE",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "entity_type",
+              "value": "CONVERSATION",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "entity_id",
+              "value": "={{ $('Parse & Route').first().json.conversation_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "ab8ad92c-7088-49c3-b097-0414e942a4fe",
+      "name": "Decide: Not Found",
+      "position": [
+        -240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "reply_text",
+              "value": "I'd be happy to help with your return. Could you share your order number? It looks like ORD-10452.",
+              "type": "string"
+            },
+            {
+              "id": "f1",
+              "name": "next_state",
+              "value": "COLLECTING_INFO",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "next_step",
+              "value": "AWAITING_ORDER_NUMBER",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "audit_event",
+              "value": "INBOUND_MESSAGE_PROCESSED",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "outcome_status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "entity_type",
+              "value": "CONVERSATION",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "entity_id",
+              "value": "={{ $('Parse & Route').first().json.conversation_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "627f871a-a17c-4211-864c-e5ce8ee3df29",
+      "name": "Decide: Ask Order",
+      "position": [
+        -480,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a friendly returns CS agent. The customer is NOT asking for a return/exchange. Reply in 2-3 warm sentences and remind them you can only help with RETURNS or EXCHANGES."
+            },
+            {
+              "content": "={{ $('Normalize Payload').first().json.message_text }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "id": "2b90027e-8bcb-440e-a387-a66b4a85b136",
+      "name": "Friendly Reply",
+      "position": [
+        -480,
+        608
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "0K3dXiA8yyZdAnAF",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0",
+              "name": "reply_text",
+              "value": "={{ $json.output[0].content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "f1",
+              "name": "next_state",
+              "value": "COMPLETE",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "next_step",
+              "value": "GENERAL_INQUIRY",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "audit_event",
+              "value": "INBOUND_MESSAGE_PROCESSED",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "outcome_status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "entity_type",
+              "value": "CONVERSATION",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "entity_id",
+              "value": "={{ $('Parse & Route').first().json.conversation_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "id": "773a467d-d214-48aa-8eac-9f8885822545",
+      "name": "Decide: Not Return",
+      "position": [
+        -240,
+        608
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "d118988e-e675-42cd-9845-c27e63c3cecd",
+      "name": "Decision",
+      "position": [
+        512,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/YOUR_TWILIO_AC/Messages.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('Parse & Route').first().json.customer_phone_full }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $('Decision').first().json.reply_text }}"
+            },
+            {
+              "name": "From",
+              "value": "whatsapp:+14155238886"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "a9153c61-ed01-4cb2-861b-509b6560d020",
+      "name": "Send WhatsApp",
+      "position": [
+        720,
+        304
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "AgZaWh6ni2L1mwTs",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/outbound-message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"conversation_id\":\"{{ $('Parse & Route').first().json.conversation_id }}\",\n \"message_text\": {{ JSON.stringify($('Decision').first().json.reply_text) }},\n \"message_sid\":\"{{ $json.sid }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "a782542d-9462-47b9-9531-c25023df4009",
+      "name": "Log Outbound",
+      "position": [
+        944,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/{{ $('Parse & Route').first().json.conversation_id }}/state",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"current_state\":\"{{ $('Decision').first().json.next_state }}\",\n \"current_step\":\"{{ $('Decision').first().json.next_step }}\",\n \"pending_question\":null,\n \"context\":{ \"customer_goal\":null, \"problem_type\":null, \"intent\":null }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "d89f878b-ed27-4256-a7b3-5e01f73b3a38",
+      "name": "Update State",
+      "position": [
+        1168,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/events/audit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Build Auth Header').first().json.authorization }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"correlation_id\":\"{{ $('Parse & Route').first().json.correlation_id }}\",\n \"event_type\":\"{{ $('Decision').first().json.audit_event }}\",\n \"event_source\":\"N8N\",\n \"related_entity_type\":\"{{ $('Decision').first().json.entity_type }}\",\n \"related_entity_id\":\"{{ $('Decision').first().json.entity_id }}\",\n \"outcome_status\":\"{{ $('Decision').first().json.outcome_status }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "id": "f7f4095e-4013-4c43-849d-f656fe061259",
+      "name": "Audit Event",
+      "position": [
+        1392,
+        304
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get ORDS Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ORDS Token": {
+      "main": [
+        [
+          {
+            "node": "Build Auth Header",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Auth Header": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Log Inbound & Get State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Inbound & Get State": {
+      "main": [
+        [
+          {
+            "node": "Understand Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Understand Message": {
+      "main": [
+        [
+          {
+            "node": "Parse & Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Route": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Check Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decide: Ask Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Friendly Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Eligibility": {
+      "main": [
+        [
+          {
+            "node": "Is Eligible?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decide: Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Eligible?": {
+      "main": [
+        [
+          {
+            "node": "Create RMA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decide: Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create RMA": {
+      "main": [
+        [
+          {
+            "node": "Decide: Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: Created": {
+      "main": [
+        [
+          {
+            "node": "Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: Denied": {
+      "main": [
+        [
+          {
+            "node": "Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: Not Found": {
+      "main": [
+        [
+          {
+            "node": "Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: Ask Order": {
+      "main": [
+        [
+          {
+            "node": "Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Friendly Reply": {
+      "main": [
+        [
+          {
+            "node": "Decide: Not Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: Not Return": {
+      "main": [
+        [
+          {
+            "node": "Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Log Outbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Outbound": {
+      "main": [
+        [
+          {
+            "node": "Update State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update State": {
+      "main": [
+        [
+          {
+            "node": "Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "633cf1f1-2a86-48bf-95d0-2658fd2d70ca",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4ce4f0004e5414165bbfe8a054f00f5b106cf98f214a48b9faad1197a5fb8ae5"
+  },
+  "nodeGroups": [],
+  "id": "Wda2zx7vX46eMsD1",
+  "tags": []
+}
