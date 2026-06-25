@@ -1,5 +1,5 @@
 {
-  "name": "RMA Copilot v2",
+  "name": "RMA Copilot v2 (clean rebuild)",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +20,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/oauth/token",
+        "url": "https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/oauth/token",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBasicAuth",
         "sendHeaders": true,
@@ -95,7 +95,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/inbound-message",
+        "url": "https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/conversations/inbound-message",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -254,7 +254,7 @@
     },
     {
       "parameters": {
-        "url": "=https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/orders/{{ $json.order_number }}/return-eligibility",
+        "url": "=https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/orders/{{ $json.order_number }}/return-eligibility",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -312,7 +312,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/returns",
+        "url": "https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/returns",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -681,7 +681,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.twilio.com/2010-04-01/Accounts/YOUR_TWILIO_AC/Messages.json",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/YOUR_TWILIO_ACCOUNT/Messages.json",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "twilioApi",
         "sendBody": true,
@@ -722,7 +722,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/outbound-message",
+        "url": "https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/conversations/outbound-message",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -749,7 +749,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/conversations/{{ $('Parse & Route').first().json.conversation_id }}/state",
+        "url": "=https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/conversations/{{ $('Parse & Route').first().json.conversation_id }}/state",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -776,7 +776,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR_SERVER/ords/YOUR_WORKSPACE/api/events/audit",
+        "url": "https://YOUR_APEX_INSTANCE/ords/YOUR_WORKSPACE/api/events/audit",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
