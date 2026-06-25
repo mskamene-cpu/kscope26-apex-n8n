@@ -33,7 +33,7 @@ prompt APPLICATION 105 - RMA Copilot
 -- Application Export:
 --   Application:     105
 --   Name:            RMA Copilot
---   Date and Time:   22:19 Friday June 19, 2026
+--   Date and Time:   12:42 Thursday June 25, 2026
 --   Exported By:     MSKAMENE@VIDEOTRON.CA
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -112,7 +112,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_value_01=>'RMA Copilot'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>45
-,p_version_scn=>39142597404539
+,p_version_scn=>39142913291045
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -8251,8 +8251,8 @@ unistr('-- the database \2014 NOT in n8n and NOT in the AI.'),
 '        p_comments      => ''Evaluate return eligibility for an order. Pass customer_id as query param to validate ownership.'',',
 '        p_source        => q''{',
 'DECLARE',
-unistr('    -- Constants \2014 adjust these for your demo'),
-'    c_approval_threshold  CONSTANT NUMBER  := 500;   -- CAD: orders above this need approval',
+'',
+'    l_approval_threshold  NUMBER;   -- CAD: orders above this need approval',
 '',
 '    l_order_id        sales_order.order_id%TYPE;',
 '    l_customer_id     sales_order.customer_id%TYPE;',
@@ -8268,6 +8268,9 @@ unistr('    -- Constants \2014 adjust these for your demo'),
 '    l_existing_rma    NUMBER;',
 '    l_norm            VARCHAR2(100);',
 'BEGIN',
+'',
+'select to_number(config_value) into l_approval_threshold_cad',
+'where CONFIG_KEY=''APPROVAL_THRESHOLD_CAD'';',
 '',
 'l_norm := UPPER(TRIM(:order_number));',
 'IF REGEXP_LIKE(l_norm, ''^[0-9]+$'') THEN',
@@ -8911,16 +8914,16 @@ unistr('  -- assigned to CLOB directly \2014 ORDS raises PLS-00382 if you try)')
 '       -- RETURN;',
 '        select customer_id into l_customer_id',
 '        from SALES_order',
-'        where order_id=TO_NUMBER(JSON_VALUE(l_body, ''$.order_id''));',
-'',
-'    END IF;',
-'',
-'    IF l_idempo'))
+'        where order_id=TO_NUMBER(JSON_VALUE(l_body, ''$.'))
 );
 wwv_flow_imp_shared.append_to_install_script(
  p_id=>wwv_flow_imp.id(19898637377693667)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'tency_key IS NULL THEN',
+'order_id''));',
+'',
+'    END IF;',
+'',
+'    IF l_idempotency_key IS NULL THEN',
 '        :status_code := 422;',
 '        OWA_UTIL.MIME_HEADER(''application/json'', TRUE);',
 '        HTP.PRN(JSON_OBJECT(''error'' VALUE ''true'' FORMAT JSON,',
