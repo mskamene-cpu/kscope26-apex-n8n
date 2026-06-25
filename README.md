@@ -30,14 +30,12 @@ Each tool stays in its lane. The AI never decides whether a return is allowed �
 
 ```
 .
-├── apex/                 # APEX application export — install via App Builder → Import (incl. Supporting Objects)
-├── n8n/
-│   ├── RMA_Copilot_v2.json   # the workflow the blog walks through (simplified, ~22 nodes)
-│   └── RMA_Copilot.json              # full production flow (multi-turn, approval split, per-branch state)
-└── README.md
+├── f105_RMA                 # APEX application export — install via App Builder → Import (incl. Supporting Objects)
+├── RMA_Copilot_v2.json    # the workflow the blog walks through (simplified, ~22 nodes)
+|── README.md
 ```
 
-**Two workflow versions.** Start with `RMA_Copilot_v2_rebuild.json` — it's the legible version the blog teaches end to end. Graduate to `RMA_Copilot.json` once that's boring; it adds multi-turn order-number collection, the auto-approve / manager-approval split, and per-branch state resets.
+The `RMA_Copilot_v2_rebuild.json` is a legible and simpler version of the workflow than the one i demoed at Kscope, and then one the blog teaches end to end. 
 
 ---
 
